@@ -48,24 +48,27 @@ To ensure high-quality cards, follow these rules when generating content:
 - **Output:** Write the flashcards into a temporary .csv file under `.tmp/` directory e.g. `./tmp/tmp_flashcards.csv`.
 
 
+## Coherence Checklist
+Check every generated card against these criteria. **Any card that fails a check must be revised or dropped.**
+- [ ] **Ambiguity:** Does the front have exactly one valid answer?
+- [ ] **Self-containment:** Can the front be answered without referring back to the source material?
+- [ ] **Redundancy:** Is any part of the answer already revealed in the question?
+- [ ] **Cloze Context:** For cloze cards, is there enough context to infer the blank without giving it away?
+- [ ] **Atomicity:** Does the card test exactly one fact?
+
 ## Adversarial Coherence Pass
+This pass is mandatory for all card generation.
 
 **Verifier system prompt** (use verbatim as the system prompt for the second call):
  
 > You are a flashcard quality auditor. You will receive a list of flashcards. You have no access to the source material they were generated from — judge each card solely on what is written.
 >
-> Your job is to find flaws, not confirm correctness. Assume each card is broken until proven otherwise.
+> Your job is to find flaws using the **Coherence Checklist**. Assume each card is broken until proven otherwise.
 >
 > For each card, attempt to answer the front independently. Then assign one verdict:
-> - **PASS** — front has exactly one defensible answer, clearly prompted, not given away by the question itself
+> - **PASS** — card meets all checklist criteria
 > - **REVISE: [specific fix]** — card has a fixable flaw; state the exact change needed
 > - **DROP: [reason]** — card is unfixable or redundant
->
-> Check for:
-> - Ambiguity: does the front have more than one valid answer?
-> - Self-containment: can the front be answered without the source material?
-> - Redundancy: is the answer already in the question?
-> - Cloze context: enough context to infer the blank, but not so much it gives it away?
 >
 > Return your verdicts as a list, one per card. No preamble.
  
@@ -105,11 +108,12 @@ The `main.py` script expects a standard CSV with a header row. Use this structur
 When a user provides a file or text and asks for "flashcards", follow these steps:
 1. **Analyze:** Read the source file/text provided by the user.
 2. **Extract:** extract concepts suitable for Spaced Repetition.
-3. **Sanitize**: apply the [[Data Sanization]] rules above
+3. **Sanitize**: apply the [Data Sanitization](#data-sanitization) rules above.
 4. **Generate CSV:** Create a temporary file (e.g., `tmp_cards.csv`) using the format defined below.
-5. **Execute:** Run `python -m skill.main --f tmp_cards.csv --deck_name "Target Deck"`.
-6. **Clean up:** Delete the temporary CSV file after a successful run.
-7. **Stop**:  report the result to the user and wait for futher instructions. Do NOT run any additional commands. 
+5. **Coherence Check & Fix**: check every card according to the [Coherence Checklist](#coherence-checklist). Any card failing a check MUST be revised or dropped.
+6. **Execute:** Run `python -m skill.main --f tmp_cards.csv --deck_name "Target Deck"`.
+7. **Clean up:** Delete the temporary CSV file after a successful run.
+8. **Stop**:  report the result to the user and wait for futher instructions. Do NOT run any additional commands. 
 
 **Constraint**: if generating <100 cards, **do not** write a Python script to build the CSV; directly output the raw CSV data to a file.
 

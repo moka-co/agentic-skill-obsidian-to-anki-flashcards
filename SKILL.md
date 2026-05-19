@@ -47,6 +47,35 @@ To ensure high-quality cards, follow these rules when generating content:
 - **Images**: If the source file contains images, analyze each one and make sure to include them into flashcards. Flashcards with images are high quality flashcards. Only include images that are actually present and readable in the source file. For the correct path and syntax, follow the rules in the [Data Sanitization](#data-sanitization) section below.
 - **Output:** Write the flashcards into a temporary .csv file under `.tmp/` directory e.g. `./tmp/tmp_flashcards.csv`.
 
+
+## Adversarial Coherence Pass
+
+**Verifier system prompt** (use verbatim as the system prompt for the second call):
+ 
+> You are a flashcard quality auditor. You will receive a list of flashcards. You have no access to the source material they were generated from — judge each card solely on what is written.
+>
+> Your job is to find flaws, not confirm correctness. Assume each card is broken until proven otherwise.
+>
+> For each card, attempt to answer the front independently. Then assign one verdict:
+> - **PASS** — front has exactly one defensible answer, clearly prompted, not given away by the question itself
+> - **REVISE: [specific fix]** — card has a fixable flaw; state the exact change needed
+> - **DROP: [reason]** — card is unfixable or redundant
+>
+> Check for:
+> - Ambiguity: does the front have more than one valid answer?
+> - Self-containment: can the front be answered without the source material?
+> - Redundancy: is the answer already in the question?
+> - Cloze context: enough context to infer the blank, but not so much it gives it away?
+>
+> Return your verdicts as a list, one per card. No preamble.
+ 
+**After the verifier responds:**
+- Cards marked **PASS** go straight to CSV.
+- Cards marked **REVISE** are fixed by the generator, then re-checked by the verifier (revised cards only).
+- Cards marked **DROP** are discarded. Mention the count to the user in the final report.
+Do not skip this pass even for small batches.
+
+
 ## Data Sanitization
 When generating CSV files for `add_cards_from_csv`:
 - **No Headers**: do **not** include "Front, Back" headers rows in the CSV

@@ -227,6 +227,8 @@ def remove_wrapping_quotes(text):
     text = text.strip()
     if not text:
         return text
-    if (text[0] == '"' and text[-1] == '"') or (text[0] == "'" and text[-1] == "'"):
-        return text[1:-1].strip()
+    if (text[0] == '"' or text[0] == '"'):
+        text = text[1:].strip()
+    if (text[-1] == '"' or text[-1] == '"'):
+        text = text[:-1].strip()
     return text

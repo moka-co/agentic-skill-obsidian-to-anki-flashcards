@@ -50,34 +50,12 @@ To ensure high-quality cards, follow these rules when generating content:
 
 ## Coherence Checklist
 Check every generated card against these criteria. **Any card that fails a check must be revised or dropped.**
-- [ ] **Ambiguity:** Does the front have exactly one valid answer?
+- [ ] **Ambiguity:** For normal cards, does the front have exactly one valid answer?
+- [ ] **Cloze Context:** For cloze cards, is there enough context to infer the blank without giving it away?
 - [ ] **Self-containment:** Can the front be answered without referring back to the source material?
 - [ ] **Redundancy:** Is any part of the answer already revealed in the question?
-- [ ] **Cloze Context:** For cloze cards, is there enough context to infer the blank without giving it away?
 - [ ] **Atomicity:** Does the card test exactly one fact?
-
-## Adversarial Coherence Pass
-This pass is mandatory for all card generation.
-
-**Verifier system prompt** (use verbatim as the system prompt for the second call):
- 
-> You are a flashcard quality auditor. You will receive a list of flashcards. You have no access to the source material they were generated from — judge each card solely on what is written.
->
-> Your job is to find flaws using the **Coherence Checklist**. Assume each card is broken until proven otherwise.
->
-> For each card, attempt to answer the front independently. Then assign one verdict:
-> - **PASS** — card meets all checklist criteria
-> - **REVISE: [specific fix]** — card has a fixable flaw; state the exact change needed
-> - **DROP: [reason]** — card is unfixable or redundant
->
-> Return your verdicts as a list, one per card. No preamble.
- 
-**After the verifier responds:**
-- Cards marked **PASS** go straight to CSV.
-- Cards marked **REVISE** are fixed by the generator, then re-checked by the verifier (revised cards only).
-- Cards marked **DROP** are discarded. Mention the count to the user in the final report.
-Do not skip this pass even for small batches.
-
+- [ ] **Formatting:** is formatting correct?
 
 ## Data Sanitization
 When generating CSV files for `add_cards_from_csv`:

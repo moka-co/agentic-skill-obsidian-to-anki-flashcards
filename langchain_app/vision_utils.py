@@ -94,10 +94,10 @@ def generate_image_descriptions(image_tracking_map: dict[str, str], vision_model
         "text-based LLM can fully understand the core concept being taught.\n\n"
         "Analyze and extract the following layers clear and concisely:\n"
         "1. Core Concept: What system, architecture, framework, or workflow is shown?\n"
-        "2. Labels & Content (OCR): Extract every written term, label, variable, or formula exactly.\n"
-        "3. Relationships & Structure: Describe layout associations, sequences, or key emphasized elements "
-        "(e.g., 'An arrow points from box A to box B, with box B highlighted in red').\n\n"
-        "Keep the summary dense, objective, and clear. Avoid fluffy descriptions."
+        "2. EDUCATIONAL VALUE: Explain what a student is expected to learn from this specific diagram.\n"
+        "3. KEY RELATIONSHIPS: Detail how the components interact to achieve the goal.\n"
+        "4. OCR/TEXT: List the critical terms that must be memorized.\n\n"
+        "Ignore cosmetic layout details. Focus purely on technical/theoretical meaning."
     )
     
     for raw_tag, absolute_path in image_tracking_map.items():

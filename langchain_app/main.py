@@ -55,14 +55,14 @@ class GenerateFlashcardsArguments(BaseModel):
 # Initialize LangChain's ChatOpenAI configured for OpenRouter
 # Hardcoded key preserved exactly from your sample snippet
 orchestrator_model = ChatOpenRouter(
-    model="google/gemini-3.1-flash-lite",
+    model="google/gemini-3.5-flash",
     api_key=VERIFIED_API_KEY,
     temperature=0.3
 )
 
 # The distinct extraction model instance isolated specifically for processing card content
 flashcard_model = ChatOpenRouter(
-    model="google/gemini-3.1-flash-lite",
+    model="google/gemini-3.5-flash",
     api_key=VERIFIED_API_KEY,
     temperature=0.3
 )
@@ -109,6 +109,10 @@ prompt_template = ChatPromptTemplate.from_messages([
         "4. CRITICAL: Never include standard markdown image syntax like '![]' or '![](...)'. Only use the exact '![[...]' format provided.\n"
         "5. CRITICAL: The 'back' field MUST contain ONLY the direct, clear answer or explanation to the question on the front. Do NOT place the question text, the image tag, or description blocks inside the 'back' field."
         "6. Never output the internal description text inside the flashcard fields; only use the raw image tag string."
+        "CRITICAL: When generating flashcards for process diagrams or architectures:"
+        "ABANDOM: simple 'What are the stages?' questions"
+        "MANDATE: 'How-it-works' questions. Focus on the relationship between components. For example 'How does [Stage A] prepare the input for [Stage B]?'"
+        "ENSURE the 'back' field explains the mechanism, not just the label."
     )),
     ("human", "Generate exactly {num_cards} distinct and high-quality flashcards from the following markdown notes:\n\n{text}")
 ])
@@ -216,12 +220,6 @@ class LocalSkillContainer:
                     else:
                         front_text = getattr(card, "front", "")
                         back_text = getattr(card, "back", "")
-
-                    # Correction utility: TODO this is an hack that must be fixed
-                    # Correction Utility: Swap if the model inverted the image-based card
-                    # Logic: If front contains an image tag but looks like an answer, or back is clearly the question
-                    if "![[" in front_text and "?" not in front_text and "?" in back_text:
-                        front_text, back_text = back_text, front_text
 
                     sanitized_front = front_text.replace("\n", "<br>")
                     sanitized_back = back_text.replace("\n", "<br>")

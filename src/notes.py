@@ -104,6 +104,15 @@ def add_notes_from_csv_file(file_name, deck_name):
                 model_name = "Basic"
             else:
                 model_name = "Cloze"
+            
+            # HACK
+            # Correction utility: TODO this is an hack that must be fixed
+            # Correction Utility: Swap if the model inverted the image-based card
+            # Logic: If front contains an image tag but looks like an answer, or back is clearly the question
+            if model_name == "Basic":
+                if "![[" in front_content and "?" not in front_content and "?" in back_content:
+                    front_content, back_content = back_content, front_content
+
 
             # Add note
             add_note(deck_name, model_name, front_content, back_content)

@@ -7,6 +7,7 @@ dependencies = [
     "requests",
     "psutil",
     "fastmcp",
+    "langchain-openrouter>=0.2.3",
 ]
 
 [tool.uv]

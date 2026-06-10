@@ -204,10 +204,17 @@ def note_builder_factory(
 # However, Anki wants a different format i.e. <b>word</b>
 # A similar issue with Latex
 def fix_formatting(text):
-    text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
-    text = re.sub(r"\*(.*?)\*", r"<i>\1</i>", text)
-    result = re.sub(r"\$(.*?)\$", r"\(\1\)", text)
-    return result
+    # Handle LaTex
+    text = re.sub(r"\$\$(.*?)\$\$", r"\[\1\]", text) # Display math
+    text = re.sub(r"\$(.*?)\$", r"\(\1\)", text)      # Inline math
+
+    # Handle bold/italic
+    text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text) # Substitute bold
+    text = re.sub(r"\*(.*?)\*", r"<i>\1</i>", text) # Substitute italic
+
+    # Clean up image 
+    text = re.sub(r"!\[(.*?)\]", r"\1", text) # Remove ![] 
+    return text
 
 
 def get_image_path(text: str) -> str | None:

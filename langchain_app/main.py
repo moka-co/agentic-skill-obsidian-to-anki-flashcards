@@ -71,7 +71,7 @@ flashcard_model = ChatOpenRouter(
 class Flashcard(BaseModel):
     front: str = Field(
         description=(
-            "The QUESTION or PROMPT field. Prepend the exact unaltered Obsidian image tag (e.g., '![[...]]') "
+            "The QUESTION or PROMPT field. Prepend the exact unaltered Obsidian image tag"
             "here if the card is based on an image descriptor block, followed by '<br>' and the question text. "
             "Never place the answer or explanation in this field."
             "Strictly follow these rules: "
@@ -84,7 +84,7 @@ class Flashcard(BaseModel):
     back: str = Field(
         description=(
             "The ANSWER or EXPLANATION field. Provide ONLY the direct answer to the question asked on the front. "
-+           "CRITICAL: Never include any image tags (like ![[...]] or ![]), question text, or descriptor blocks in this field."
+           "CRITICAL: Never include any image tags (like ![[...]] or ![]), question text, or descriptor blocks in this field."
         )
     )
 
@@ -96,23 +96,30 @@ structured_flashcard_llm = flashcard_model.with_structured_output(FlashcardDeck)
 prompt_template = ChatPromptTemplate.from_messages([
     ("system", (
         "You are an expert educational supervisor. Your job is to extract concepts suitable "
-        "for Spaced Repetition from the user's provided markdown text. Evaluate your cards "
-        "against the Coherence Checklist: check for ambiguity, ensure cloze cards have enough context, "
-        "make them self-contained, remove redundancies, and maintain absolute atomicity."
+        "for Spaced Repetition from the user's provided markdown text.\n\n"
+        "QUALITY CHECKLIST — evaluate every card against these criteria:\n"
+        "- No ambiguity in the question\n"
+        "- Cloze cards have sufficient surrounding context\n"
+        "- Each card is fully self-contained\n"
+        "- No redundant cards covering the same concept\n"
+        "- Strict atomicity: one fact per card\n\n"
+
+        "FIELD CONTRACT:\n"
+        "- 'front': ALWAYS contains the question (and optionally an image tag — see below).\n"
+        "- 'back': ALWAYS contains ONLY the direct answer or explanation. "
+        "Never put the question, image tags, or descriptor blocks here.\n\n"
+
         "IMAGE HANDLING RULES:\n"
-        "1. You will encounter '[IMAGE CONTENT DESCRIPTOR: ...]' blocks right next to image tags like ![[...]]'.\n"
-        "2. Evaluate if the diagram contains vital testing context. If it does, create a flashcard targeting it.\n"
-        "3. To include the image on a card, prepend the exact unaltered Obsidian image tag (e.g., '![[path_to_image.png]]') "
-        "in the front field first the question, followed by a HTML break tag '<br>' and then the image path. The 'front' field must ALWAYS contain the question.\n"
-        "To include the image on a card, prepend the exact unaltered image tag (absolute) (e.g., '![[path_to_image.png]]') "
-        "the very beginning of the 'front' field, followed by an HTML break tag '<br>' and your question text.\n"
-        "4. CRITICAL: Never include standard markdown image syntax like '![]' or '![](...)'. Only use the exact '![[...]' format provided.\n"
-        "5. CRITICAL: The 'back' field MUST contain ONLY the direct, clear answer or explanation to the question on the front. Do NOT place the question text, the image tag, or description blocks inside the 'back' field."
-        "6. Never output the internal description text inside the flashcard fields; only use the raw image tag string."
-        "CRITICAL: When generating flashcards for process diagrams or architectures:"
-        "ABANDOM: simple 'What are the stages?' questions"
-        "MANDATE: 'How-it-works' questions. Focus on the relationship between components. For example 'How does [Stage A] prepare the input for [Stage B]?'"
-        "ENSURE the 'back' field explains the mechanism, not just the label."
+        "1. You will encounter '[IMAGE CONTENT DESCRIPTOR: ...]' blocks adjacent to Obsidian image tags like '![[path.png]]'.\n"
+        "2. Only create a flashcard for an image if the diagram contains vital, testable information.\n"
+        "3. To include an image in a card, place the question text first in the 'front' field," 
+        "followed by '<br>' and then the unaltered file path/name of the image (e.g., '[path_to_image.png]'). A different order will break the flashcard irreversibly"
+        "4. CRITICAL: Never output descriptor block text inside any card field — only the raw image tag string.\n\n"
+
+        "CRITICAL: When generating flashcards for process diagrams or architectures:\n"
+        "- ABANDOM: simple 'What are the stages?' questions\n"
+        "- MANDATE: 'How-it-works' questions. Focus on the relationship between components. For example 'How does [Stage A] prepare the input for [Stage B]?'\n"
+        "- ENSURE the 'back' field explains the mechanism, not just the label.\n\n"
     )),
     ("human", "Generate exactly {num_cards} distinct and high-quality flashcards from the following markdown notes:\n\n{text}")
 ])
@@ -193,7 +200,7 @@ class LocalSkillContainer:
                 
 
         @tool("generate_flashcards_from_markdown", args_schema=GenerateFlashcardsArguments)
-        def generate_flashcards_from_markdown(source_markdown_path: str, num_cards : int = 60, output_csv_path: str = "./tmp/tmp_flashcards.csv") -> str:
+        def generate_flashcards_from_markdown(source_markdown_path: str, num_cards : int = 60, output_csv_path: str = "./.tmp/tmp_flashcards.csv") -> str:
             """Use this tool when the user explicitly requests to create, extract, generate, or distill new flashcards from a markdown file text source."""
             if not os.path.exists(source_markdown_path):
                 return f"Error: Source markdown file '{source_markdown_path}' not found."
@@ -230,7 +237,7 @@ class LocalSkillContainer:
         return [execute_local_skill, generate_flashcards_from_markdown]
 
 
-# --- Execution Entrypoint ---
+
 if __name__ == "__main__":
     with open("./SKILL.md", "r") as f:
         md_content = f.read()
@@ -254,6 +261,7 @@ if __name__ == "__main__":
         "to save the CSV file. Once successful, use 'execute_local_skill' to run 'main.py' with the proper flags to upload it.\n"
         "- For queries, checks, updates, or direct file imports, execute 'execute_local_skill' directly.\n\n"
         "- Do not include conversational filler, open-ended helpful remarks, or pleasantries (such as 'How can I help you with your flashcards today?') in your response. Keep the final text concise and strictly focused on reporting the direct results of the action.\n\n"
+        "- Stop when you encounter any errors in the output"
         f"Allowed Skills Documentation:\n{runtime_deps.markdown_instructions}"
     )
     

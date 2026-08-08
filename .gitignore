@@ -1,3 +1,5 @@
+.main_to_refactor.py
+
 # Ignore .csv files used for test
 *.csv
 

@@ -1,15 +1,17 @@
+import argparse
 import getpass
 import os
 import subprocess
-from dataclasses import dataclass
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
 from langchain_openrouter import ChatOpenRouter
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import Secret, SecretStr
+from schemas import SkillContext, SkillArguments, GenerateFlashcardsArguments, FlashcardDeck
 import csv 
+
+from prompts import get_system_prompts_content, get_base_prompt_template, get_critic_prompt_template
 
 load_dotenv()
 # Get API key
@@ -22,35 +24,6 @@ if not api_key:
 
 VERIFIED_API_KEY = SecretStr(api_key)
 
-# Local environment layout definition
-@dataclass
-class SkillContext:
-    markdown_instructions: str
-    allowed_directories: list[str]
-
-# Define strict parameters the LLM must extract to run a local script skill
-class SkillArguments(BaseModel):
-    script_name: str = Field(
-        description="The base Python filename containing the execution logic (e.g., 'main.py'). Never use action names or flags as the script name."
-    )
-    flags: list[str] = Field(
-        default_factory=list,
-        description="The explicit switches, flags, or arguments to pass to the script (e.g., ['--f', './tmp/tmp_flashcards.csv', '--deck_name', 'Computer Science'])"
-    )
-
-# Define parameters for the dedicated flashcard extraction tool
-class GenerateFlashcardsArguments(BaseModel):
-    source_markdown_path: str = Field(
-        description="The relative or absolute file path to the local markdown file containing the study notes that need to be distilled into flashcards."
-    )
-    num_cards: int = Field(
-        default=60,
-        description="The target number of flashcards the user wants to generate from the document text."
-    )
-    output_csv_path: str = Field(
-        default="./tmp/tmp_flashcards.csv",
-        description="The destination path where the generated headerless CSV file must be written."
-    )
 
 # Initialize LangChain's ChatOpenAI configured for OpenRouter
 # Hardcoded key preserved exactly from your sample snippet
@@ -67,68 +40,66 @@ flashcard_model = ChatOpenRouter(
     temperature=0.3
 )
 
-# Define the structured flashcard layout
-class Flashcard(BaseModel):
-    front: str = Field(
-        description=(
-            "The QUESTION or PROMPT field. Prepend the exact unaltered Obsidian image tag"
-            "here if the card is based on an image descriptor block, followed by '<br>' and the question text. "
-            "Never place the answer or explanation in this field."
-            "Strictly follow these rules: "
-            "1. Atomicity: Test exactly one specific fact. "
-            "2. Clarity: Bold key terms for visual scanning. "
-            "3. Cloze Deletion: Use Anki format like '{{c1::hidden text}}' when appropriate. "
-            "4. Formula Integrity: Preserve LaTeX ($inline$ or $$display$$) exactly."
-        )
-    )
-    back: str = Field(
-        description=(
-            "The ANSWER or EXPLANATION field. Provide ONLY the direct answer to the question asked on the front. "
-           "CRITICAL: Never include any image tags (like ![[...]] or ![]), question text, or descriptor blocks in this field."
-        )
-    )
+# Dedicated critic model instance responsible for reviewing and improving the generated deck
+critic_model = ChatOpenRouter(
+    model="google/gemini-3.5-flash",
+    api_key=VERIFIED_API_KEY,
+    temperature=0.3
+)
 
-class FlashcardDeck(BaseModel):
-    cards: list[Flashcard] = Field(description="A collection of generated flashcards.")
-
+    
+    
 # Bind the pydantic layout to the extraction LLM
 structured_flashcard_llm = flashcard_model.with_structured_output(FlashcardDeck)
-prompt_template = ChatPromptTemplate.from_messages([
-    ("system", (
-        "You are an expert educational supervisor. Your job is to extract concepts suitable "
-        "for Spaced Repetition from the user's provided markdown text.\n\n"
-        "QUALITY CHECKLIST — evaluate every card against these criteria:\n"
-        "- No ambiguity in the question\n"
-        "- Cloze cards have sufficient surrounding context\n"
-        "- Each card is fully self-contained\n"
-        "- No redundant cards covering the same concept\n"
-        "- Strict atomicity: one fact per card\n\n"
-
-        "FIELD CONTRACT:\n"
-        "- 'front': ALWAYS contains the question (and optionally an image tag — see below).\n"
-        "- 'back': ALWAYS contains ONLY the direct answer or explanation. "
-        "Never put the question, image tags, or descriptor blocks here.\n\n"
-
-        "IMAGE HANDLING RULES:\n"
-        "1. You will encounter '[IMAGE CONTENT DESCRIPTOR: ...]' blocks adjacent to Obsidian image tags like '![[path.png]]'.\n"
-        "2. Only create a flashcard for an image if the diagram contains vital, testable information.\n"
-        "3. To include an image in a card, place the question text first in the 'front' field," 
-        "followed by '<br>' and then the unaltered file path/name of the image (e.g., '[path_to_image.png]'). A different order will break the flashcard irreversibly"
-        "4. CRITICAL: Never output descriptor block text inside any card field — only the raw image tag string.\n\n"
-
-        "CRITICAL: When generating flashcards for process diagrams or architectures:\n"
-        "- ABANDOM: simple 'What are the stages?' questions\n"
-        "- MANDATE: 'How-it-works' questions. Focus on the relationship between components. For example 'How does [Stage A] prepare the input for [Stage B]?'\n"
-        "- ENSURE the 'back' field explains the mechanism, not just the label.\n\n"
-    )),
-    ("human", "Generate exactly {num_cards} distinct and high-quality flashcards from the following markdown notes:\n\n{text}")
-])
-
+prompt_template = get_base_prompt_template()
 generation_chain = prompt_template | structured_flashcard_llm
 
-def run_visual_flashcard_pipeline(source_markdown_path: str, vision_model, num_cards: int = 15) -> list:
+# Bind the same pydantic layout to the critic LLM so it returns a revised, structured deck
+structured_critic_llm = critic_model.with_structured_output(FlashcardDeck)
+critic_prompt_template = get_critic_prompt_template()
+critic_chain = critic_prompt_template | structured_critic_llm
+
+def _format_cards_for_critic(cards: list) -> str:
+    """Render a list of Flashcard-like objects/dicts into a readable numbered block for the critic prompt."""
+    lines = []
+    for i, card in enumerate(cards, start=1):
+        if isinstance(card, dict):
+            front_text = card.get("front", "")
+            back_text = card.get("back", "")
+        else:
+            front_text = getattr(card, "front", "")
+            back_text = getattr(card, "back", "")
+        lines.append(f"{i}. FRONT: {front_text}\n   BACK: {back_text}")
+    return "\n".join(lines) if lines else "(no cards were generated)"
+
+
+def run_flashcard_critic(source_text: str, draft_cards: list) -> list:
+    """
+    Invokes the critic model, giving it the original source markdown (with any image
+    descriptions already fused in) plus the draft deck, and returns the revised deck —
+    fixing broken/nonsensical cards, removing redundancy, and adding cards for any
+    important information the draft missed.
+    """
+    print("Running flashcard critic chain...")
+
+    formatted_draft = _format_cards_for_critic(draft_cards)
+
+    revised_deck = critic_chain.invoke({
+        "text": source_text,
+        "draft_cards": formatted_draft
+    })
+
+    if isinstance(revised_deck, FlashcardDeck):
+        return revised_deck.cards
+    elif isinstance(revised_deck, dict) and "cards" in revised_deck:
+        return revised_deck["cards"]
+    return draft_cards
+
+def run_visual_flashcard_pipeline(source_markdown_path: str, vision_model, num_cards: int = 15) -> tuple[list, str]:
     """
     Orchestrates the entire multi-agent visual flashcard processing loop.
+    Returns a tuple of (cards_list, processed_text) so downstream steps (like the
+    critic) can reuse the same image-augmented source context.
     """
     # 1. Step 1: Intercept and resolve links
     from vision_utils import intercept_and_resolve_images
@@ -156,10 +127,14 @@ def run_visual_flashcard_pipeline(source_markdown_path: str, vision_model, num_c
     
     # Normalize structural output format for your downstream CSV writer
     if isinstance(extracted_deck, FlashcardDeck):
-        return extracted_deck.cards
+        cards = extracted_deck.cards
     elif isinstance(extracted_deck, dict) and "cards" in extracted_deck:
-        return extracted_deck["cards"]
-    return []
+        cards = extracted_deck["cards"]
+    else:
+        cards = []
+
+    return cards, processed_text
+
 
 # 3. Encapsulate dynamic tool paths within a container class
 class LocalSkillContainer:
@@ -199,22 +174,7 @@ class LocalSkillContainer:
                 return f"Execution Failed (Exit Code {e.returncode}).\n\nSTDERR:\n{e.stderr}"
                 
 
-        @tool("generate_flashcards_from_markdown", args_schema=GenerateFlashcardsArguments)
-        def generate_flashcards_from_markdown(source_markdown_path: str, num_cards : int = 60, output_csv_path: str = "./.tmp/tmp_flashcards.csv") -> str:
-            """Use this tool when the user explicitly requests to create, extract, generate, or distill new flashcards from a markdown file text source."""
-            if not os.path.exists(source_markdown_path):
-                return f"Error: Source markdown file '{source_markdown_path}' not found."
-
-            # Run the multi-agent visual pipeline to intercept images and extract flashcards
-            cards_list = run_visual_flashcard_pipeline(
-                source_markdown_path=source_markdown_path,
-                vision_model=flashcard_model,
-                num_cards=num_cards
-            )
-
-            if not cards_list:
-                return "No flashcards were extracted from the text."
-
+        def _write_cards_csv(cards_list: list, output_csv_path: str) -> None:
             os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
 
             with open(output_csv_path, "w", newline="", encoding="utf-8") as csv_file:
@@ -232,13 +192,96 @@ class LocalSkillContainer:
                     sanitized_back = back_text.replace("\n", "<br>")
                     writer.writerow([sanitized_front, sanitized_back])
 
-            return f"Success! {len(cards_list)} flashcards created locally at: {output_csv_path}"
+        @tool("generate_flashcards_from_markdown", args_schema=GenerateFlashcardsArguments)
+        def generate_flashcards_from_markdown(source_markdown_path: str, num_cards : int = 60, output_csv_path: str = "./.tmp/tmp_flashcards.csv") -> str:
+            """Use this tool when the user explicitly requests to create, extract, generate, or distill new flashcards from a markdown file text source."""
+            if not os.path.exists(source_markdown_path):
+                return f"Error: Source markdown file '{source_markdown_path}' not found."
+
+            # Step 1: Run the multi-agent visual pipeline to intercept images and extract a draft deck
+            draft_cards, processed_source_text = run_visual_flashcard_pipeline(
+                source_markdown_path=source_markdown_path,
+                vision_model=flashcard_model,
+                num_cards=num_cards
+            )
+
+            if not draft_cards:
+                return "No flashcards were extracted from the text."
+
+            # Write the draft deck to disk first, so tmp_flashcards.csv reflects the pipeline's raw output
+            _write_cards_csv(draft_cards, output_csv_path)
+
+            # Step 2: Invoke the critic to read tmp_flashcards.csv (+ the source markdown for context),
+            # verify quality, fix nonsensical/broken cards, and integrate any missing information
+            final_cards = run_flashcard_critic(
+                source_text=processed_source_text,
+                draft_cards=draft_cards
+            )
+
+            if not final_cards:
+                final_cards = draft_cards
+
+            # Overwrite the CSV with the critic-reviewed, improved deck
+            _write_cards_csv(final_cards, output_csv_path)
+
+            return (
+                f"Success! {len(draft_cards)} flashcards drafted, reviewed by critic, "
+                f"and {len(final_cards)} finalized flashcards saved locally at: {output_csv_path}"
+            )
 
         return [execute_local_skill, generate_flashcards_from_markdown]
 
+def parse_args() -> argparse.Namespace:
+    """
+    CLI entrypoint arguments. The markdown file path is now a required
+    positional/flag argument instead of being typed interactively. An
+    optional free-form query can be supplied to steer the orchestrator
+    (e.g. extra instructions, a target deck name, etc). If omitted, it
+    defaults to an empty string and the workflow just generates flashcards
+    for the given file.
+    """
+
+    parser = argparse.ArgumentParser(
+        description="Generate (and upload) Anki-style flashcards from a local markdown file."
+    )
+    parser.add_argument(
+        "-f", "--file",
+        dest="file_path",
+        required=True,
+        help="Path to the markdown file to generate flashcards from."
+    )
+    parser.add_argument(
+        "-q", "--query",
+        dest="user_query",
+        default="",
+        help="Optional extra instructions for the orchestrator (e.g. deck name, card count, tone). Defaults to empty."
+    )
+    parser.add_argument(
+        "-n", "--num-cards",
+        dest="num_cards",
+        type=int,
+        default=None,
+        help="Optional target number of flashcards to generate."
+    )
+    return parser.parse_args()
+
+
+def build_user_request(file_path: str, user_query: str, num_cards: int | None) -> str:
+    """Compose the instruction sent to the orchestrator from CLI args."""
+    request = f"Generate flashcards from the markdown file located at: {file_path}."
+    if num_cards:
+        request += f" Target approximately {num_cards} flashcards."
+    if user_query:
+        request += f" Additional instructions: {user_query}"
+    return request
 
 
 if __name__ == "__main__":
+    args = parse_args()
+
+    if not os.path.exists(args.file_path):
+        raise FileNotFoundError(f"Markdown file not found: {args.file_path}")
+
     with open("./SKILL.md", "r") as f:
         md_content = f.read()
         
@@ -253,24 +296,15 @@ if __name__ == "__main__":
     # Map both tools dynamically to the execution coordinator
     model_with_tools = orchestrator_model.bind_tools(tools_list)
 
-    system_prompt_content = (
-        "You are a local workflow execution engine. Your job is to read the user's request, "
-        "consult the provided Markdown documentation, and call the correct tools in sequence to complete the workflow.\n\n"
-        "Guidelines:\n"
-        "- If the user wants to generate new flashcards from a file, first call 'generate_flashcards_from_markdown' "
-        "to save the CSV file. Once successful, use 'execute_local_skill' to run 'main.py' with the proper flags to upload it.\n"
-        "- For queries, checks, updates, or direct file imports, execute 'execute_local_skill' directly.\n\n"
-        "- Do not include conversational filler, open-ended helpful remarks, or pleasantries (such as 'How can I help you with your flashcards today?') in your response. Keep the final text concise and strictly focused on reporting the direct results of the action.\n\n"
-        "- Stop when you encounter any errors in the output"
-        f"Allowed Skills Documentation:\n{runtime_deps.markdown_instructions}"
-    )
-    
-    user_query = input("Enter your command: ").strip()
-    print(f"\nUser Request: {user_query}\n---")
+    # Get system prompts, see prompts.py
+    system_prompt_content = get_system_prompts_content(runtime_deps)
+
+    user_request = build_user_request(args.file_path, args.user_query, args.num_cards)
+    print(f"\nRequest: {user_request}\n---")
     
     messages = [
         SystemMessage(content=system_prompt_content),
-        HumanMessage(content=user_query)
+        HumanMessage(content=user_request)
     ]
     
     # Loop execution allows processing dependencies sequentially

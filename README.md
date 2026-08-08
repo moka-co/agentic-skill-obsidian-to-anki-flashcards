@@ -34,9 +34,13 @@ gemini skill link $PWD
 ```
 
 #### As Langchain app (advanced but more accurate)
+As langchain app, you need an open router key and some credits. Langchain app has an additional feature; a **critic** that verifies the quality of the generated flashcards and eventually add missing content. 
+
 Instructions:
-1. Grab an api key from your favorite provider (e.g. OpenRouter) and set it into a `.env`
-2. Run python -m uv run --project . python -m langchain_app.main
+1. Create a file called `.env` and add in the first line: "OPENROUTER_API_KEY=xxxxx", substitute xxxxx with your key
+2. Run `python -m uv run --project . -m langchain_app.main -f 'path/to/your_note.md' -d 'Test Deck'`
+
+You can optionally specify "-q" as argument and input your query
 
 #### As MCP
 Instruction for Gemini (claude follows the same pattern):
@@ -55,7 +59,6 @@ cd slopcard2anki
 gemini mcp add slopcards2anki "python" "-m" "uv" "run" "--project" "$PWD" "python" "-m" "mcp_server.mcp_server"  
 ```
 
-
 ### 3. Usage
 Once registered, you can use **natural language** to automatically upload flashcards. 
 
@@ -66,7 +69,7 @@ Once registered, you can use **natural language** to automatically upload flashc
 If you installed the MCP server, type `/mcp` in your CLI to see available tools.
 
 ## 🏗️ How it works
-1. The AI (e.g. Claude Code / Gemini CLI) analyzes your notes and identifies high-value concepts
+1. The AI (e.g. Claude Code / Gemini CLI) analyzes your notes, identifies high-value concepts and make flashcards
 2. The the AI calls the `main.py` or `mcp_server` tools to create or update cards to your local Anki profile
 
 ## ⚠️ Scope & Roadmap

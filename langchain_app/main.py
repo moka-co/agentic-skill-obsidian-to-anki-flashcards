@@ -12,6 +12,7 @@ from schemas import SkillContext, SkillArguments, GenerateFlashcardsArguments, F
 import csv 
 
 from prompts import get_system_prompts_content, get_base_prompt_template, get_critic_prompt_template
+from vision_utils import intercept_and_resolve_images, generate_image_descriptions, augment_markdown_with_descriptions
 
 load_dotenv()
 # Get API key
@@ -102,7 +103,6 @@ def run_visual_flashcard_pipeline(source_markdown_path: str, vision_model, num_c
     critic) can reuse the same image-augmented source context.
     """
     # 1. Step 1: Intercept and resolve links
-    from vision_utils import intercept_and_resolve_images
     image_map = intercept_and_resolve_images(source_markdown_path)
     
     # Read raw text
@@ -111,7 +111,6 @@ def run_visual_flashcard_pipeline(source_markdown_path: str, vision_model, num_c
     
     # 2. Step 2 & 3: Run vision extraction and fuse context if images exist
     if image_map:
-        from vision_utils import generate_image_descriptions, augment_markdown_with_descriptions  # Assuming step 2 function location
         descriptions = generate_image_descriptions(image_map, vision_model)
         processed_text = augment_markdown_with_descriptions(raw_markdown, descriptions)
     else:
@@ -169,7 +168,7 @@ class LocalSkillContainer:
             
             try:
                 result = subprocess.run(command, capture_output=True, text=True, check=True, env=env, cwd=project_root)
-                return f"Execution Success!\n\nSTDOUT:\n{result.stderr}"
+                return f"Execution Success!\n\nSTDOUT:\n{result.stdout}"
             except subprocess.CalledProcessError as e:
                 return f"Execution Failed (Exit Code {e.returncode}).\n\nSTDERR:\n{e.stderr}"
                 
@@ -251,6 +250,12 @@ def parse_args() -> argparse.Namespace:
         help="Path to the markdown file to generate flashcards from."
     )
     parser.add_argument(
+        "-d", "--deck-name",
+        dest="deck_name",
+        default=None,
+        help="Optional name for the flashcard deck (e.g. 'Biology Chapter 4'). Defaults to none."
+    )
+    parser.add_argument(
         "-q", "--query",
         dest="user_query",
         default="",
@@ -266,11 +271,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def build_user_request(file_path: str, user_query: str, num_cards: int | None) -> str:
+def build_user_request(file_path: str, user_query: str, num_cards: int | None, deck_name: str | None) -> str:
     """Compose the instruction sent to the orchestrator from CLI args."""
     request = f"Generate flashcards from the markdown file located at: {file_path}."
     if num_cards:
         request += f" Target approximately {num_cards} flashcards."
+    if deck_name:
+        request += f" Name this deck: '{deck_name}'."
     if user_query:
         request += f" Additional instructions: {user_query}"
     return request
@@ -299,7 +306,7 @@ if __name__ == "__main__":
     # Get system prompts, see prompts.py
     system_prompt_content = get_system_prompts_content(runtime_deps)
 
-    user_request = build_user_request(args.file_path, args.user_query, args.num_cards)
+    user_request = build_user_request(args.file_path, args.user_query, args.num_cards, args.deck_name)
     print(f"\nRequest: {user_request}\n---")
     
     messages = [

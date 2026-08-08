@@ -29,26 +29,24 @@ VERIFIED_API_KEY = SecretStr(api_key)
 # Initialize LangChain's ChatOpenAI configured for OpenRouter
 # Hardcoded key preserved exactly from your sample snippet
 orchestrator_model = ChatOpenRouter(
-    model="google/gemini-3.5-flash",
+    model="google/gemini-3.6-flash",
     api_key=VERIFIED_API_KEY,
     temperature=0.3
 )
 
 # The distinct extraction model instance isolated specifically for processing card content
 flashcard_model = ChatOpenRouter(
-    model="google/gemini-3.5-flash",
+    model="google/gemini-3.5-flash-lite",
     api_key=VERIFIED_API_KEY,
-    temperature=0.3
+    temperature=0.5
 )
 
 # Dedicated critic model instance responsible for reviewing and improving the generated deck
 critic_model = ChatOpenRouter(
-    model="google/gemini-3.5-flash",
+    model="google/gemini-3.5-flash-lite",
     api_key=VERIFIED_API_KEY,
     temperature=0.3
-)
-
-    
+)  
     
 # Bind the pydantic layout to the extraction LLM
 structured_flashcard_llm = flashcard_model.with_structured_output(FlashcardDeck)

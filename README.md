@@ -33,6 +33,10 @@ cd slopcard2anki
 gemini skill link $PWD
 ```
 
+#### As Langchain app (advanced but more accurate)
+Instructions:
+1. Grab an api key from your favorite provider (e.g. OpenRouter) and set it into a `.env`
+2. Run python -m uv run --project . python -m langchain_app.main
 
 #### As MCP
 Instruction for Gemini (claude follows the same pattern):
